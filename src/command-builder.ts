@@ -1,10 +1,7 @@
 import { parser } from 'emailjs-imap-handler'
 import { encode } from 'emailjs-mime-codec'
 import { encode as encodeBase64 } from 'emailjs-base64'
-import {
-  fromTypedArray,
-  toTypedArray
-} from './common'
+import { fromTypedArray, toTypedArray } from './common'
 
 /**
  * Builds a FETCH command
@@ -14,13 +11,15 @@ import {
  * @param {Object} [options] Optional options object. Use `{byUid:true}` for `UID FETCH`
  * @returns {Object} Structured IMAP command
  */
-export function buildFETCHCommand (sequence, items, options) {
+export function buildFETCHCommand(sequence, items, options) {
   const command = {
     command: options.byUid ? 'UID FETCH' : 'FETCH',
-    attributes: [{
-      type: 'SEQUENCE',
-      value: sequence
-    }]
+    attributes: [
+      {
+        type: 'SEQUENCE',
+        value: sequence,
+      },
+    ],
   }
 
   if (options.valueAsString !== undefined) {
@@ -29,14 +28,14 @@ export function buildFETCHCommand (sequence, items, options) {
 
   let query = []
 
-  items.forEach((item) => {
+  items.forEach(item => {
     item = item.toUpperCase().trim()
 
     if (/^\w+$/.test(item)) {
       // alphanum strings can be used directly
       query.push({
         type: 'ATOM',
-        value: item
+        value: item,
       })
     } else if (item) {
       try {
@@ -47,7 +46,7 @@ export function buildFETCHCommand (sequence, items, options) {
         // if parse failed, use the original string as one entity
         query.push({
           type: 'ATOM',
-          value: item
+          value: item,
         })
       }
     }
@@ -60,13 +59,16 @@ export function buildFETCHCommand (sequence, items, options) {
   command.attributes.push(query)
 
   if (options.changedSince) {
-    command.attributes.push([{
-      type: 'ATOM',
-      value: 'CHANGEDSINCE'
-    }, {
-      type: 'ATOM',
-      value: options.changedSince
-    }])
+    command.attributes.push([
+      {
+        type: 'ATOM',
+        value: 'CHANGEDSINCE',
+      },
+      {
+        type: 'ATOM',
+        value: options.changedSince,
+      },
+    ])
   }
 
   return command
@@ -79,13 +81,8 @@ export function buildFETCHCommand (sequence, items, options) {
  * @param {String} token Valid access token for the user
  * @return {String} Base64 formatted login token
  */
-export function buildXOAuth2Token (user = '', token) {
-  const authData = [
-    `user=${user}`,
-    `auth=Bearer ${token}`,
-    '',
-    ''
-  ]
+export function buildXOAuth2Token(user = '', token) {
+  const authData = [`user=${user}`, `auth=Bearer ${token}`, '', '']
   return encodeBase64(authData.join('\x01'))
 }
 
@@ -105,36 +102,37 @@ export function buildXOAuth2Token (user = '', token) {
  * @param {Boolean} [options.byUid] If ture, use UID SEARCH instead of SEARCH
  * @return {Object} IMAP command object
  */
-export function buildSEARCHCommand (query = {}, options = {}) {
+export function buildSEARCHCommand(query = {}, options = {}) {
   const command = {
-    command: options.byUid ? 'UID SEARCH' : 'SEARCH'
+    command: options.byUid ? 'UID SEARCH' : 'SEARCH',
   }
 
   let isAscii = true
 
-  const buildTerm = (query) => {
+  const buildTerm = query => {
     let list = []
 
-    Object.keys(query).forEach((key) => {
+    Object.keys(query).forEach(key => {
       let params = []
-      const formatDate = (date) => date.toUTCString().replace(/^\w+, 0?(\d+) (\w+) (\d+).*/, '$1-$2-$3')
-      const escapeParam = (param) => {
+      const formatDate = date =>
+        date.toUTCString().replace(/^\w+, 0?(\d+) (\w+) (\d+).*/, '$1-$2-$3')
+      const escapeParam = param => {
         if (typeof param === 'number') {
           return {
             type: 'number',
-            value: param
+            value: param,
           }
         } else if (typeof param === 'string') {
           if (/[\u0080-\uFFFF]/.test(param)) {
             isAscii = false
             return {
               type: 'literal',
-              value: fromTypedArray(encode(param)) // cast unicode string to pseudo-binary as imap-handler compiles strings as octets
+              value: fromTypedArray(encode(param)), // cast unicode string to pseudo-binary as imap-handler compiles strings as octets
             }
           }
           return {
             type: 'string',
-            value: param
+            value: param,
           }
         } else if (Object.prototype.toString.call(param) === '[object Date]') {
           // RFC 3501 allows for dates to be placed in
@@ -143,7 +141,7 @@ export function buildSEARCHCommand (query = {}, options = {}) {
           // so we treat the date as an atom.
           return {
             type: 'atom',
-            value: formatDate(param)
+            value: formatDate(param),
           }
         } else if (Array.isArray(param)) {
           return param.map(escapeParam)
@@ -154,15 +152,15 @@ export function buildSEARCHCommand (query = {}, options = {}) {
 
       params.push({
         type: 'atom',
-        value: key.toUpperCase()
-      });
+        value: key.toUpperCase(),
+      })
 
-      [].concat(query[key] || []).forEach((param) => {
+      ;[].concat(query[key] || []).forEach(param => {
         switch (key.toLowerCase()) {
           case 'uid':
             param = {
               type: 'sequence',
-              value: param
+              value: param,
             }
             break
           // The Gmail extension values of X-GM-THRID and
@@ -173,7 +171,7 @@ export function buildSEARCHCommand (query = {}, options = {}) {
           case 'x-gm-msgid':
             param = {
               type: 'number',
-              value: param
+              value: param,
             }
             break
           default:
@@ -195,11 +193,11 @@ export function buildSEARCHCommand (query = {}, options = {}) {
   if (!isAscii) {
     command.attributes.unshift({
       type: 'atom',
-      value: 'UTF-8'
+      value: 'UTF-8',
     })
     command.attributes.unshift({
       type: 'atom',
-      value: 'CHARSET'
+      value: 'CHARSET',
     })
   }
 
@@ -209,26 +207,35 @@ export function buildSEARCHCommand (query = {}, options = {}) {
 /**
  * Creates an IMAP STORE command from the selected arguments
  */
-export function buildSTORECommand (sequence, action = '', flags = [], options = {}) {
+export function buildSTORECommand(
+  sequence,
+  action = '',
+  flags = [],
+  options = {}
+) {
   const command = {
     command: options.byUid ? 'UID STORE' : 'STORE',
-    attributes: [{
-      type: 'sequence',
-      value: sequence
-    }]
+    attributes: [
+      {
+        type: 'sequence',
+        value: sequence,
+      },
+    ],
   }
 
   command.attributes.push({
     type: 'atom',
-    value: action.toUpperCase() + (options.silent ? '.SILENT' : '')
+    value: action.toUpperCase() + (options.silent ? '.SILENT' : ''),
   })
 
-  command.attributes.push(flags.map((flag) => {
-    return {
-      type: 'atom',
-      value: flag
-    }
-  }))
+  command.attributes.push(
+    flags.map(flag => {
+      return {
+        type: 'atom',
+        value: flag,
+      }
+    })
+  )
 
   return command
 }

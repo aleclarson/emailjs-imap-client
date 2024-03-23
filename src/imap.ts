@@ -1,5 +1,6 @@
 import { propOr } from 'ramda'
 import TCPSocket from 'emailjs-tcp-socket'
+import Tinypool from 'tinypool'
 import { toTypedArray, fromTypedArray } from './common'
 import { parser, compiler } from 'emailjs-imap-handler'
 import Compression from './compression'
@@ -60,7 +61,7 @@ const TIMEOUT_SOCKET_MULTIPLIER = 0.1
  * @param {String} [options.compressionWorkerPath] offloads de-/compression computation to a web worker, this is the path to the browserified emailjs-compressor-worker.js
  */
 export default class Imap {
-  constructor (host, port, options = {}) {
+  constructor(host, port, options = {}) {
     this.timeoutEnterIdle = TIMEOUT_ENTER_IDLE
     this.timeoutSocketLowerBound = TIMEOUT_SOCKET_LOWER_BOUND
     this.timeoutSocketMultiplier = TIMEOUT_SOCKET_MULTIPLIER
@@ -71,7 +72,10 @@ export default class Imap {
     this.host = host || 'localhost'
 
     // Use a TLS connection. Port 993 also forces TLS.
-    this.options.useSecureTransport = 'useSecureTransport' in this.options ? !!this.options.useSecureTransport : this.port === 993
+    this.options.useSecureTransport =
+      'useSecureTransport' in this.options
+        ? !!this.options.useSecureTransport
+        : this.port === 993
 
     this.secureMode = !!this.options.useSecureTransport // Does the connection use SSL/TLS
 
@@ -119,23 +123,26 @@ export default class Imap {
    *     in production use!
    * @returns {Promise} Resolves when socket is opened
    */
-  connect (Socket = TCPSocket) {
+  connect(Socket = TCPSocket) {
     return new Promise((resolve, reject) => {
       this.socket = Socket.open(this.host, this.port, {
         binaryType: 'arraybuffer',
         useSecureTransport: this.secureMode,
-        ca: this.options.ca
+        ca: this.options.ca,
       })
 
       // allows certificate handling for platform w/o native tls support
       // oncert is non standard so setting it might throw if the socket object is immutable
       try {
-        this.socket.oncert = (cert) => { this.oncert && this.oncert(cert) }
-      } catch (E) { }
+        this.socket.oncert = cert => {
+          this.oncert && this.oncert(cert)
+        }
+      } catch (E) {}
 
       // Connection closing unexpected is an error
-      this.socket.onclose = () => this._onError(new Error('Socket closed unexpectedly!'))
-      this.socket.ondata = (evt) => {
+      this.socket.onclose = () =>
+        this._onError(new Error('Socket closed unexpectedly!'))
+      this.socket.ondata = evt => {
         try {
           this._onData(evt)
         } catch (err) {
@@ -144,13 +151,13 @@ export default class Imap {
       }
 
       // if an error happens during create time, reject the promise
-      this.socket.onerror = (e) => {
+      this.socket.onerror = e => {
         reject(new Error('Could not open socket: ' + e.data.message))
       }
 
       this.socket.onopen = () => {
         // use proper "irrecoverable error, tear down everything"-handler only after socket is open
-        this.socket.onerror = (e) => this._onError(e)
+        this.socket.onerror = e => this._onError(e)
         resolve()
       }
     })
@@ -161,8 +168,8 @@ export default class Imap {
    *
    * @returns {Promise} Resolves when the socket is closed
    */
-  close (error) {
-    return new Promise((resolve) => {
+  close(error) {
+    return new Promise(resolve => {
       var tearDown = () => {
         // fulfill pending promises
         this._clientQueue.forEach(cmd => cmd.callback(error))
@@ -187,7 +194,7 @@ export default class Imap {
           this.socket.onerror = null
           try {
             this.socket.oncert = null
-          } catch (E) { }
+          } catch (E) {}
 
           this.socket = null
         }
@@ -213,7 +220,7 @@ export default class Imap {
    *
    * @returns {Promise} Resolves when connection is closed by server.
    */
-  logout () {
+  logout() {
     return new Promise((resolve, reject) => {
       this.socket.onclose = this.socket.onerror = () => {
         this.close('Client logging out').then(resolve).catch(reject)
@@ -226,7 +233,7 @@ export default class Imap {
   /**
    * Initiates TLS handshake
    */
-  upgrade () {
+  upgrade() {
     this.secureMode = true
     this.socket.upgradeToSecure()
   }
@@ -245,16 +252,18 @@ export default class Imap {
    * @param {Object} [options] Optional data for the command payload
    * @returns {Promise} Promise that resolves when the corresponding response was received
    */
-  enqueueCommand (request, acceptUntagged, options) {
+  enqueueCommand(request, acceptUntagged, options) {
     if (typeof request === 'string') {
       request = {
-        command: request
+        command: request,
       }
     }
 
-    acceptUntagged = [].concat(acceptUntagged || []).map((untagged) => (untagged || '').toString().toUpperCase().trim())
+    acceptUntagged = []
+      .concat(acceptUntagged || [])
+      .map(untagged => (untagged || '').toString().toUpperCase().trim())
 
-    var tag = 'W' + (++this._tagCounter)
+    var tag = 'W' + ++this._tagCounter
     request.tag = tag
 
     return new Promise((resolve, reject) => {
@@ -262,7 +271,7 @@ export default class Imap {
         tag: tag,
         request: request,
         payload: acceptUntagged.length ? {} : undefined,
-        callback: (response) => {
+        callback: response => {
           if (this.isError(response)) {
             return reject(response)
           } else {
@@ -278,13 +287,17 @@ export default class Imap {
           }
 
           resolve(response)
-        }
+        },
       }
 
       // apply any additional options to the command
-      Object.keys(options || {}).forEach((key) => { data[key] = options[key] })
+      Object.keys(options || {}).forEach(key => {
+        data[key] = options[key]
+      })
 
-      acceptUntagged.forEach((command) => { data.payload[command] = [] })
+      acceptUntagged.forEach(command => {
+        data.payload[command] = []
+      })
 
       // if we're in priority mode (i.e. we ran commands in a precheck),
       // queue any commands BEFORE the command that contianed the precheck,
@@ -310,7 +323,7 @@ export default class Imap {
    * @param ctx
    * @returns {*}
    */
-  getPreviouslyQueued (commands, ctx) {
+  getPreviouslyQueued(commands, ctx) {
     const startIndex = this._clientQueue.indexOf(ctx) - 1
 
     // search backwards for the commands and return the first found
@@ -327,7 +340,7 @@ export default class Imap {
 
     return false
 
-    function isMatch (data) {
+    function isMatch(data) {
       return data && data.request && commands.indexOf(data.request.command) >= 0
     }
   }
@@ -338,7 +351,7 @@ export default class Imap {
    *
    * @param {String} str Payload
    */
-  send (str) {
+  send(str) {
     const buffer = toTypedArray(str).buffer
     this._resetSocketTimeout(buffer.byteLength)
 
@@ -357,7 +370,7 @@ export default class Imap {
    * @param {String} command Untagged command name
    * @param {Function} callback Callback function with response object and continue callback function
    */
-  setHandler (command, callback) {
+  setHandler(command, callback) {
     this._globalAcceptUntagged[command.toUpperCase().trim()] = callback
   }
 
@@ -369,14 +382,16 @@ export default class Imap {
    * @event
    * @param {Event} evt Event object. See evt.data for the error
    */
-  _onError (evt) {
+  _onError(evt) {
     var error
     if (this.isError(evt)) {
       error = evt
     } else if (evt && this.isError(evt.data)) {
       error = evt.data
     } else {
-      error = new Error((evt && evt.data && evt.data.message) || evt.data || evt || 'Error')
+      error = new Error(
+        (evt && evt.data && evt.data.message) || evt.data || evt || 'Error'
+      )
     }
 
     // only log here if no onerror handler is supplied
@@ -385,11 +400,14 @@ export default class Imap {
     }
 
     // always call onerror callback, no matter if close() succeeds or fails
-    this.close(error).then(() => {
-      this.onerror && this.onerror(error)
-    }, () => {
-      this.onerror && this.onerror(error)
-    })
+    this.close(error).then(
+      () => {
+        this.onerror && this.onerror(error)
+      },
+      () => {
+        this.onerror && this.onerror(error)
+      }
+    )
   }
 
   /**
@@ -400,7 +418,7 @@ export default class Imap {
    *
    * @param {Event} evt
    */
-  _onData (evt) {
+  _onData(evt) {
     // reset the timeout on each data packet
     this._resetSocketTimeout()
 
@@ -408,7 +426,7 @@ export default class Imap {
     this._parseIncomingCommands(this._iterateIncomingBuffer()) // Consume the incoming buffer
   }
 
-  * _iterateIncomingBuffer () {
+  *_iterateIncomingBuffer() {
     let buf = this._incomingBuffers[this._incomingBuffers.length - 1] || []
     let i = 0
 
@@ -430,7 +448,8 @@ export default class Imap {
         case BUFFER_STATE_POSSIBLY_LITERAL_LENGTH_2:
           if (i < buf.length) {
             if (buf[i] === CARRIAGE_RETURN) {
-              this._literalRemaining = Number(fromTypedArray(this._lengthBuffer)) + 2 // for CRLF
+              this._literalRemaining =
+                Number(fromTypedArray(this._lengthBuffer)) + 2 // for CRLF
               this._bufferState = BUFFER_STATE_LITERAL
             } else {
               this._bufferState = BUFFER_STATE_DEFAULT
@@ -441,7 +460,8 @@ export default class Imap {
 
         case BUFFER_STATE_POSSIBLY_LITERAL_LENGTH_1:
           const start = i
-          while (i < buf.length && buf[i] >= 48 && buf[i] <= 57) { // digits
+          while (i < buf.length && buf[i] >= 48 && buf[i] <= 57) {
+            // digits
             i++
           }
           if (start !== i) {
@@ -452,7 +472,10 @@ export default class Imap {
             this._lengthBuffer.set(latest, prevBuf.length)
           }
           if (i < buf.length) {
-            if (this._lengthBuffer.length > 0 && buf[i] === RIGHT_CURLY_BRACKET) {
+            if (
+              this._lengthBuffer.length > 0 &&
+              buf[i] === RIGHT_CURLY_BRACKET
+            ) {
               this._bufferState = BUFFER_STATE_POSSIBLY_LITERAL_LENGTH_2
             } else {
               delete this._lengthBuffer
@@ -479,9 +502,14 @@ export default class Imap {
           const LFidx = buf.indexOf(LINE_FEED, i)
           if (LFidx > -1) {
             if (LFidx < buf.length - 1) {
-              this._incomingBuffers[this._incomingBuffers.length - 1] = new Uint8Array(buf.buffer, 0, LFidx + 1)
+              this._incomingBuffers[this._incomingBuffers.length - 1] =
+                new Uint8Array(buf.buffer, 0, LFidx + 1)
             }
-            const commandLength = this._incomingBuffers.reduce((prev, curr) => prev + curr.length, 0) - 2 // 2 for CRLF
+            const commandLength =
+              this._incomingBuffers.reduce(
+                (prev, curr) => prev + curr.length,
+                0
+              ) - 2 // 2 for CRLF
             const command = new Uint8Array(commandLength)
             let index = 0
             while (this._incomingBuffers.length > 0) {
@@ -523,7 +551,7 @@ export default class Imap {
   /**
    * Processes a command from the queue. The command is parsed and feeded to a handler
    */
-  _parseIncomingCommands (commands) {
+  _parseIncomingCommands(commands) {
     for (var command of commands) {
       this._clearIdle()
 
@@ -542,7 +570,7 @@ export default class Imap {
         if (this._currentCommand.data.length) {
           // feed the next chunk of data
           var chunk = this._currentCommand.data.shift()
-          chunk += (!this._currentCommand.data.length ? EOL : '') // EOL if there's nothing more to send
+          chunk += !this._currentCommand.data.length ? EOL : '' // EOL if there's nothing more to send
           this.send(chunk)
         } else if (this._currentCommand.errorResponseExpectsEmptyLine) {
           this.send(EOL) // XOAUTH2 empty response, error will be reported when server continues with NO response
@@ -552,7 +580,9 @@ export default class Imap {
 
       var response
       try {
-        const valueAsString = this._currentCommand.request && this._currentCommand.request.valueAsString
+        const valueAsString =
+          this._currentCommand.request &&
+          this._currentCommand.request.valueAsString
         response = parser(command, { valueAsString })
         this.logger.debug('S:', () => compiler(response, false, true))
       } catch (e) {
@@ -576,7 +606,7 @@ export default class Imap {
    *
    * @param {Object} response Parsed command object
    */
-  _handleResponse (response) {
+  _handleResponse(response) {
     var command = propOr('', 'command', response).toUpperCase().trim()
 
     if (!this._currentCommand) {
@@ -586,7 +616,11 @@ export default class Imap {
         this._canSend = true
         this._sendRequest()
       }
-    } else if (this._currentCommand.payload && response.tag === '*' && command in this._currentCommand.payload) {
+    } else if (
+      this._currentCommand.payload &&
+      response.tag === '*' &&
+      command in this._currentCommand.payload
+    ) {
       // expected untagged response
       this._currentCommand.payload[command].push(response)
       // still expecting more data for the response of the current command
@@ -598,7 +632,10 @@ export default class Imap {
       this._resetSocketTimeout()
     } else if (response.tag === this._currentCommand.tag) {
       // tagged response
-      if (this._currentCommand.payload && Object.keys(this._currentCommand.payload).length) {
+      if (
+        this._currentCommand.payload &&
+        Object.keys(this._currentCommand.payload).length
+      ) {
         response.payload = this._currentCommand.payload
       }
       this._currentCommand.callback(response)
@@ -610,7 +647,7 @@ export default class Imap {
   /**
    * Sends a command from client queue to the server.
    */
-  _sendRequest () {
+  _sendRequest() {
     if (!this._clientQueue.length) {
       this._currentCommand = false
       return this._enterIdle()
@@ -631,27 +668,29 @@ export default class Imap {
       this._restartQueue = true
 
       // invoke the precheck command and resume normal operation after the promise resolves
-      precheck(context).then(() => {
-        // we're done with the precheck
-        if (this._restartQueue) {
-          // we need to restart the queue handling
-          this._sendRequest()
-        }
-      }).catch((err) => {
-        // precheck failed, so we remove the initial command
-        // from the queue, invoke its callback and resume normal operation
-        let cmd
-        const index = this._clientQueue.indexOf(context)
-        if (index >= 0) {
-          cmd = this._clientQueue.splice(index, 1)[0]
-        }
-        if (cmd && cmd.callback) {
-          cmd.callback(err)
-          this._canSend = true
-          this._parseIncomingCommands(this._iterateIncomingBuffer()) // Consume the rest of the incoming buffer
-          this._sendRequest() // continue sending
-        }
-      })
+      precheck(context)
+        .then(() => {
+          // we're done with the precheck
+          if (this._restartQueue) {
+            // we need to restart the queue handling
+            this._sendRequest()
+          }
+        })
+        .catch(err => {
+          // precheck failed, so we remove the initial command
+          // from the queue, invoke its callback and resume normal operation
+          let cmd
+          const index = this._clientQueue.indexOf(context)
+          if (index >= 0) {
+            cmd = this._clientQueue.splice(index, 1)[0]
+          }
+          if (cmd && cmd.callback) {
+            cmd.callback(err)
+            this._canSend = true
+            this._parseIncomingCommands(this._iterateIncomingBuffer()) // Consume the rest of the incoming buffer
+            this._sendRequest() // continue sending
+          }
+        })
       return
     }
 
@@ -660,9 +699,14 @@ export default class Imap {
 
     try {
       this._currentCommand.data = compiler(this._currentCommand.request, true)
-      this.logger.debug('C:', () => compiler(this._currentCommand.request, false, true)) // excludes passwords etc.
+      this.logger.debug('C:', () =>
+        compiler(this._currentCommand.request, false, true)
+      ) // excludes passwords etc.
     } catch (e) {
-      this.logger.error('Error compiling imap command!', this._currentCommand.request)
+      this.logger.error(
+        'Error compiling imap command!',
+        this._currentCommand.request
+      )
       return this._onError(new Error('Error compiling imap command!'))
     }
 
@@ -675,15 +719,18 @@ export default class Imap {
   /**
    * Emits onidle, noting to do currently
    */
-  _enterIdle () {
+  _enterIdle() {
     clearTimeout(this._idleTimer)
-    this._idleTimer = setTimeout(() => (this.onidle && this.onidle()), this.timeoutEnterIdle)
+    this._idleTimer = setTimeout(
+      () => this.onidle && this.onidle(),
+      this.timeoutEnterIdle
+    )
   }
 
   /**
    * Cancel idle timer
    */
-  _clearIdle () {
+  _clearIdle() {
     clearTimeout(this._idleTimer)
     this._idleTimer = null
   }
@@ -705,7 +752,7 @@ export default class Imap {
    *
    * @param {Object} response Parsed response object
    */
-  _processResponse (response) {
+  _processResponse(response) {
     const command = propOr('', 'command', response).toUpperCase().trim()
 
     // no attributes
@@ -714,9 +761,16 @@ export default class Imap {
     }
 
     // untagged responses w/ sequence numbers
-    if (response.tag === '*' && /^\d+$/.test(response.command) && response.attributes[0].type === 'ATOM') {
+    if (
+      response.tag === '*' &&
+      /^\d+$/.test(response.command) &&
+      response.attributes[0].type === 'ATOM'
+    ) {
       response.nr = Number(response.command)
-      response.command = (response.attributes.shift().value || '').toString().toUpperCase().trim()
+      response.command = (response.attributes.shift().value || '')
+        .toString()
+        .toUpperCase()
+        .trim()
     }
 
     // no optional response code
@@ -726,17 +780,21 @@ export default class Imap {
 
     // If last element of the response is TEXT then this is for humans
     if (response.attributes[response.attributes.length - 1].type === 'TEXT') {
-      response.humanReadable = response.attributes[response.attributes.length - 1].value
+      response.humanReadable =
+        response.attributes[response.attributes.length - 1].value
     }
 
     // Parse and format ATOM values
-    if (response.attributes[0].type === 'ATOM' && response.attributes[0].section) {
-      const option = response.attributes[0].section.map((key) => {
+    if (
+      response.attributes[0].type === 'ATOM' &&
+      response.attributes[0].section
+    ) {
+      const option = response.attributes[0].section.map(key => {
         if (!key) {
           return
         }
         if (Array.isArray(key)) {
-          return key.map((key) => (key.value || '').toString().trim())
+          return key.map(key => (key.value || '').toString().trim())
         } else {
           return (key.value || '').toString().toUpperCase().trim()
         }
@@ -759,7 +817,7 @@ export default class Imap {
    * @param {Mixed} value Value to be checked
    * @return {Boolean} returns true if the value is an Error
    */
-  isError (value) {
+  isError(value) {
     return !!Object.prototype.toString.call(value).match(/Error\]$/)
   }
 
@@ -768,46 +826,46 @@ export default class Imap {
   /**
    * Sets up deflate/inflate for the IO
    */
-  enableCompression () {
+  enableCompression() {
     this._socketOnData = this.socket.ondata
     this.compressed = true
 
-    if (typeof window !== 'undefined' && window.Worker) {
-      this._compressionWorker = new Worker(URL.createObjectURL(new Blob([CompressionBlob])))
-      this._compressionWorker.onmessage = (e) => {
-        var message = e.data.message
-        var data = e.data.buffer
+    this._compressionWorker = new Tinypool({
+      filename: new URL('./compression-worker.mjs', import.meta.url),
+    })
+    this._compressionWorker.onmessage = e => {
+      var message = e.data.message
+      var data = e.data.buffer
 
-        switch (message) {
-          case MESSAGE_INFLATED_DATA_READY:
-            this._socketOnData({ data })
-            break
+      switch (message) {
+        case MESSAGE_INFLATED_DATA_READY:
+          this._socketOnData({ data })
+          break
 
-          case MESSAGE_DEFLATED_DATA_READY:
-            this.waitDrain = this.socket.send(data)
-            break
-        }
+        case MESSAGE_DEFLATED_DATA_READY:
+          this.waitDrain = this.socket.send(data)
+          break
       }
-
-      this._compressionWorker.onerror = (e) => {
-        this._onError(new Error('Error handling compression web worker: ' + e.message))
-      }
-
-      this._compressionWorker.postMessage(createMessage(MESSAGE_INITIALIZE_WORKER))
-    } else {
-      const inflatedReady = (buffer) => { this._socketOnData({ data: buffer }) }
-      const deflatedReady = (buffer) => { this.waitDrain = this.socket.send(buffer) }
-      this._compression = new Compression(inflatedReady, deflatedReady)
     }
 
+    this._compressionWorker.onerror = e => {
+      this._onError(
+        new Error('Error handling compression web worker: ' + e.message)
+      )
+    }
+
+    this._compressionWorker.run(createMessage(MESSAGE_INITIALIZE_WORKER))
+
     // override data handler, decompress incoming data
-    this.socket.ondata = (evt) => {
+    this.socket.ondata = evt => {
       if (!this.compressed) {
         return
       }
 
       if (this._compressionWorker) {
-        this._compressionWorker.postMessage(createMessage(MESSAGE_INFLATE, evt.data), [evt.data])
+        this._compressionWorker.run(createMessage(MESSAGE_INFLATE, evt.data), {
+          transferList: [evt.data],
+        })
       } else {
         this._compression.inflate(evt.data)
       }
@@ -817,7 +875,7 @@ export default class Imap {
   /**
    * Undoes any changes related to compression. This only be called when closing the connection
    */
-  _disableCompression () {
+  _disableCompression() {
     if (!this.compressed) {
       return
     }
@@ -838,19 +896,26 @@ export default class Imap {
    *
    * @param {ArrayBuffer} buffer Outgoing uncompressed arraybuffer
    */
-  _sendCompressed (buffer) {
+  _sendCompressed(buffer) {
     // deflate
     if (this._compressionWorker) {
-      this._compressionWorker.postMessage(createMessage(MESSAGE_DEFLATE, buffer), [buffer])
+      this._compressionWorker.run(createMessage(MESSAGE_DEFLATE, buffer), {
+        transferList: [buffer],
+      })
     } else {
       this._compression.deflate(buffer)
     }
   }
 
-  _resetSocketTimeout (byteLength) {
+  _resetSocketTimeout(byteLength) {
     clearTimeout(this._socketTimeoutTimer)
-    const timeout = this.timeoutSocketLowerBound + Math.floor((byteLength || 4096) * this.timeoutSocketMultiplier) // max packet size is 4096 bytes
-    this._socketTimeoutTimer = setTimeout(() => this._onError(new Error(' Socket timed out!')), timeout)
+    const timeout =
+      this.timeoutSocketLowerBound +
+      Math.floor((byteLength || 4096) * this.timeoutSocketMultiplier) // max packet size is 4096 bytes
+    this._socketTimeoutTimer = setTimeout(
+      () => this._onError(new Error(' Socket timed out!')),
+      timeout
+    )
   }
 }
 

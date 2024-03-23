@@ -9,12 +9,18 @@ import { mimeWordEncode, mimeWordsDecode } from 'emailjs-mime-codec'
  * @param {Object} response
  * @return {Object} Namespaces object
  */
-export function parseNAMESPACE (response) {
-  if (!response.payload || !response.payload.NAMESPACE || !response.payload.NAMESPACE.length) {
+export function parseNAMESPACE(response) {
+  if (
+    !response.payload ||
+    !response.payload.NAMESPACE ||
+    !response.payload.NAMESPACE.length
+  ) {
     return false
   }
 
-  const attributes = [].concat(response.payload.NAMESPACE.pop().attributes || [])
+  const attributes = [].concat(
+    response.payload.NAMESPACE.pop().attributes || []
+  )
   if (!attributes.length) {
     return false
   }
@@ -22,7 +28,7 @@ export function parseNAMESPACE (response) {
   return {
     personal: parseNAMESPACEElement(attributes[0]),
     users: parseNAMESPACEElement(attributes[1]),
-    shared: parseNAMESPACEElement(attributes[2])
+    shared: parseNAMESPACEElement(attributes[2]),
   }
 }
 
@@ -32,20 +38,20 @@ export function parseNAMESPACE (response) {
  * @param {Object} element
  * @return {Object} Namespaces element object
  */
-export function parseNAMESPACEElement (element) {
+export function parseNAMESPACEElement(element) {
   if (!element) {
     return false
   }
 
   element = [].concat(element || [])
-  return element.map((ns) => {
+  return element.map(ns => {
     if (!ns || !ns.length) {
       return false
     }
 
     return {
       prefix: ns[0].value,
-      delimiter: ns[1] && ns[1].value // The delimiter can legally be NIL which maps to null
+      delimiter: ns[1] && ns[1].value, // The delimiter can legally be NIL which maps to null
     }
   })
 }
@@ -56,15 +62,16 @@ export function parseNAMESPACEElement (element) {
  * @param {Object} response
  * @return {Object} Mailbox information object
  */
-export function parseSELECT (response) {
+export function parseSELECT(response) {
   if (!response || !response.payload) {
     return
   }
 
   const mailbox = {
-    readOnly: response.code === 'READ-ONLY'
+    readOnly: response.code === 'READ-ONLY',
   }
-  const existsResponse = response.payload.EXISTS && response.payload.EXISTS.pop()
+  const existsResponse =
+    response.payload.EXISTS && response.payload.EXISTS.pop()
   const flagsResponse = response.payload.FLAGS && response.payload.FLAGS.pop()
   const okResponse = response.payload.OK
 
@@ -72,11 +79,17 @@ export function parseSELECT (response) {
     mailbox.exists = existsResponse.nr || 0
   }
 
-  if (flagsResponse && flagsResponse.attributes && flagsResponse.attributes.length) {
-    mailbox.flags = flagsResponse.attributes[0].map((flag) => (flag.value || '').toString().trim())
+  if (
+    flagsResponse &&
+    flagsResponse.attributes &&
+    flagsResponse.attributes.length
+  ) {
+    mailbox.flags = flagsResponse.attributes[0].map(flag =>
+      (flag.value || '').toString().trim()
+    )
   }
 
-  [].concat(okResponse || []).forEach((ok) => {
+  ;[].concat(okResponse || []).forEach(ok => {
     switch (ok && ok.code) {
       case 'PERMANENTFLAGS':
         mailbox.permanentFlags = [].concat(ok.permanentflags || [])
@@ -107,7 +120,7 @@ export function parseSELECT (response) {
  * @param {Array} value Envelope array
  * @param {Object} Envelope object
  */
-export function parseENVELOPE (value) {
+export function parseENVELOPE(value) {
   const envelope = {}
 
   if (value[0] && value[0].value) {
@@ -161,11 +174,14 @@ export function parseENVELOPE (value) {
  * to addressparser and uses resulting values instead of the
  * pre-parsed addresses
  */
-function processAddresses (list = []) {
-  return list.map((addr) => {
-    const name = (pathOr('', ['0', 'value'], addr)).trim()
-    const address = (pathOr('', ['2', 'value'], addr)) + '@' + (pathOr('', ['3', 'value'], addr))
-    const formatted = name ? (encodeAddressName(name) + ' <' + address + '>') : address
+function processAddresses(list = []) {
+  return list.map(addr => {
+    const name = pathOr('', ['0', 'value'], addr).trim()
+    const address =
+      pathOr('', ['2', 'value'], addr) + '@' + pathOr('', ['3', 'value'], addr)
+    const formatted = name
+      ? encodeAddressName(name) + ' <' + address + '>'
+      : address
     const parsed = parseAddress(formatted).shift() // there should be just a single address
     parsed.name = mimeWordsDecode(parsed.name)
     return parsed
@@ -178,7 +194,7 @@ function processAddresses (list = []) {
  * @param {String} name Name part of an address
  * @returns {String} Mime word encoded or quoted string
  */
-function encodeAddressName (name) {
+function encodeAddressName(name) {
   if (!/^[\w ']*$/.test(name)) {
     if (/^[\x20-\x7e]*$/.test(name)) {
       return JSON.stringify(name)
@@ -195,7 +211,7 @@ function encodeAddressName (name) {
  * @param {Array} value BODYSTRUCTURE array
  * @param {Object} Envelope object
  */
-export function parseBODYSTRUCTURE (node, path = []) {
+export function parseBODYSTRUCTURE(node, path = []) {
   const curNode = {}
   let i = 0
   let part = 0
@@ -213,7 +229,8 @@ export function parseBODYSTRUCTURE (node, path = []) {
     }
 
     // multipart type
-    curNode.type = 'multipart/' + ((node[i++] || {}).value || '').toString().toLowerCase()
+    curNode.type =
+      'multipart/' + ((node[i++] || {}).value || '').toString().toLowerCase()
 
     // extension data (not available for BODY requests)
 
@@ -227,7 +244,8 @@ export function parseBODYSTRUCTURE (node, path = []) {
   } else {
     // content type
     curNode.type = [
-      ((node[i++] || {}).value || '').toString().toLowerCase(), ((node[i++] || {}).value || '').toString().toLowerCase()
+      ((node[i++] || {}).value || '').toString().toLowerCase(),
+      ((node[i++] || {}).value || '').toString().toLowerCase(),
     ].join('/')
 
     // body parameter parenthesized list
@@ -274,7 +292,7 @@ export function parseBODYSTRUCTURE (node, path = []) {
           // rfc822 bodyparts share the same path, difference is between MIME and HEADER
           // path.MIME returns message/rfc822 header
           // path.HEADER returns inlined message header
-          parseBODYSTRUCTURE(node[i], path)
+          parseBODYSTRUCTURE(node[i], path),
         ]
       }
       i++
@@ -311,7 +329,9 @@ export function parseBODYSTRUCTURE (node, path = []) {
   // body disposition
   if (i < node.length - 1) {
     if (Array.isArray(node[i]) && node[i].length) {
-      curNode.disposition = ((node[i][0] || {}).value || '').toString().toLowerCase()
+      curNode.disposition = ((node[i][0] || {}).value || '')
+        .toString()
+        .toLowerCase()
       if (Array.isArray(node[i][1])) {
         curNode.dispositionParameters = attributesToObject(node[i][1])
       }
@@ -322,7 +342,9 @@ export function parseBODYSTRUCTURE (node, path = []) {
   // body language
   if (i < node.length - 1) {
     if (node[i]) {
-      curNode.language = [].concat(node[i]).map((val) => propOr('', 'value', val).toLowerCase())
+      curNode.language = []
+        .concat(node[i])
+        .map(val => propOr('', 'value', val).toLowerCase())
     }
     i++
   }
@@ -340,7 +362,11 @@ export function parseBODYSTRUCTURE (node, path = []) {
   return curNode
 }
 
-function attributesToObject (attrs = [], keyTransform = toLower, valueTransform = mimeWordsDecode) {
+function attributesToObject(
+  attrs = [],
+  keyTransform = toLower,
+  valueTransform = mimeWordsDecode
+) {
   const vals = attrs.map(prop('value'))
   const keys = vals.filter((_, i) => i % 2 === 0).map(keyTransform)
   const values = vals.filter((_, i) => i % 2 === 1).map(valueTransform)
@@ -353,15 +379,20 @@ function attributesToObject (attrs = [], keyTransform = toLower, valueTransform 
  * @param {Object} response
  * @return {Object} Message object
  */
-export function parseFETCH (response) {
-  if (!response || !response.payload || !response.payload.FETCH || !response.payload.FETCH.length) {
+export function parseFETCH(response) {
+  if (
+    !response ||
+    !response.payload ||
+    !response.payload.FETCH ||
+    !response.payload.FETCH.length
+  ) {
     return []
   }
 
   const list = []
   const messages = {}
 
-  response.payload.FETCH.forEach((item) => {
+  response.payload.FETCH.forEach(item => {
     const params = [].concat([].concat(item.attributes || [])[0] || []) // ensure the first value is an array
     let message
     let i, len, key
@@ -371,7 +402,7 @@ export function parseFETCH (response) {
       message = messages[item.nr]
     } else {
       messages[item.nr] = message = {
-        '#': item.nr
+        '#': item.nr,
       }
       list.push(message)
     }
@@ -379,8 +410,10 @@ export function parseFETCH (response) {
     for (i = 0, len = params.length; i < len; i++) {
       if (i % 2 === 0) {
         key = compiler({
-          attributes: [params[i]]
-        }).toLowerCase().replace(/<\d+>$/, '')
+          attributes: [params[i]],
+        })
+          .toLowerCase()
+          .replace(/<\d+>$/, '')
         continue
       }
       message[key] = parseFetchValue(key, params[i])
@@ -397,7 +430,7 @@ export function parseFETCH (response) {
  * @param {Mized} value Value for the key
  * @return {Mixed} Processed value
  */
-function parseFetchValue (key, value) {
+function parseFetchValue(key, value) {
   if (!value) {
     return null
   }
@@ -416,7 +449,7 @@ function parseFetchValue (key, value) {
   switch (key) {
     case 'flags':
     case 'x-gm-labels':
-      value = [].concat(value).map((flag) => (flag.value || ''))
+      value = [].concat(value).map(flag => flag.value || '')
       break
     case 'envelope':
       value = parseENVELOPE([].concat(value || []))
@@ -433,16 +466,16 @@ function parseFetchValue (key, value) {
 }
 
 /**
-  * Binary Search - from npm module binary-search, license CC0
-  *
-  * @param {Array} haystack Ordered array
-  * @param {any} needle Item to search for in haystack
-  * @param {Function} comparator Function that defines the sort order
-  * @return {Number} Index of needle in haystack or if not found,
-  *     -Index-1 is the position where needle could be inserted while still
-  *     keeping haystack ordered.
-  */
-function binSearch (haystack, needle, comparator = (a, b) => a - b) {
+ * Binary Search - from npm module binary-search, license CC0
+ *
+ * @param {Array} haystack Ordered array
+ * @param {any} needle Item to search for in haystack
+ * @param {Function} comparator Function that defines the sort order
+ * @return {Number} Index of needle in haystack or if not found,
+ *     -Index-1 is the position where needle could be inserted while still
+ *     keeping haystack ordered.
+ */
+function binSearch(haystack, needle, comparator = (a, b) => a - b) {
   var mid, cmp
   var low = 0
   var high = haystack.length - 1
@@ -450,7 +483,7 @@ function binSearch (haystack, needle, comparator = (a, b) => a - b) {
   while (low <= high) {
     // Note that "(low + high) >>> 1" may overflow, and results in
     // a typecast to double (which gives the wrong results).
-    mid = low + (high - low >> 1)
+    mid = low + ((high - low) >> 1)
     cmp = +comparator(haystack[mid], needle)
 
     if (cmp < 0.0) {
@@ -467,7 +500,7 @@ function binSearch (haystack, needle, comparator = (a, b) => a - b) {
 
   // key not found
   return ~low
-};
+}
 
 /**
  * Parses SEARCH response. Gathers all untagged SEARCH responses, fetched seq./uid numbers
@@ -476,14 +509,18 @@ function binSearch (haystack, needle, comparator = (a, b) => a - b) {
  * @param {Object} response
  * @return {Array} Sorted Seq./UID number list
  */
-export function parseSEARCH (response) {
+export function parseSEARCH(response) {
   const list = []
 
   if (!response) {
     throw new Error('parseSEARCH can not parse undefined response')
   }
 
-  if (!response.payload || !response.payload.SEARCH || !response.payload.SEARCH.length) {
+  if (
+    !response.payload ||
+    !response.payload.SEARCH ||
+    !response.payload.SEARCH.length
+  ) {
     return list
   }
 
@@ -498,7 +535,7 @@ export function parseSEARCH (response) {
   )
 
   return list
-};
+}
 
 /**
  * Parses COPY and UID COPY response.
@@ -507,12 +544,12 @@ export function parseSEARCH (response) {
  * @returns {{destSeqSet: string, srcSeqSet: string}} Source and
  * destination uid sets if available, undefined if not.
  */
-export function parseCOPY (response) {
+export function parseCOPY(response) {
   const copyuid = response && response.copyuid
   if (copyuid) {
     return {
       srcSeqSet: copyuid[1],
-      destSeqSet: copyuid[2]
+      destSeqSet: copyuid[2],
     }
   }
 }
@@ -523,6 +560,6 @@ export function parseCOPY (response) {
  * @param {Object} response
  * @returns {String} The uid assigned to the uploaded message if available.
  */
-export function parseAPPEND (response) {
+export function parseAPPEND(response) {
   return response && response.appenduid && response.appenduid[1]
 }

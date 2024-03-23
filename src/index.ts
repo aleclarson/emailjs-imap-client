@@ -6,7 +6,7 @@ export {
   LOG_LEVEL_WARN,
   LOG_LEVEL_INFO,
   LOG_LEVEL_DEBUG,
-  LOG_LEVEL_ALL
+  LOG_LEVEL_ALL,
 } from './common'
 
 export default ImapClient

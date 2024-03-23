@@ -8,14 +8,13 @@ const MESSAGE_DEFLATED_DATA_READY = 'deflated_ready'
 
 const createMessage = (message, buffer) => ({ message, buffer })
 
-const inflatedReady = buffer => self.postMessage(createMessage(MESSAGE_INFLATED_DATA_READY, buffer), [buffer])
-const deflatedReady = buffer => self.postMessage(createMessage(MESSAGE_DEFLATED_DATA_READY, buffer), [buffer])
+const inflatedReady = buffer =>
+  self.postMessage(createMessage(MESSAGE_INFLATED_DATA_READY, buffer), [buffer])
+const deflatedReady = buffer =>
+  self.postMessage(createMessage(MESSAGE_DEFLATED_DATA_READY, buffer), [buffer])
 const compressor = new Compressor(inflatedReady, deflatedReady)
 
-self.onmessage = function (e) {
-  const message = e.data.message
-  const buffer = e.data.buffer
-
+export default ({ message, buffer }) => {
   switch (message) {
     case MESSAGE_INITIALIZE_WORKER:
       break
